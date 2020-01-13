@@ -1,8 +1,8 @@
 #!/usr/bin/wish
 
 ###################################################################################################
-#    Copyright 2006-2017, S. Merkel, Universite Lille 1, France
-#    Contact: email sebastien.merkel at univ-lille1.fr
+#    Copyright 2006-2020, S. Merkel, Universite de Lille, France
+#    Contact: email sebastien.merkel at univ-lille.fr
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -71,6 +71,9 @@
 # Changed 07/2014: adapted for EVPSC
 # Changed 23/09/2015 S. Merkel to account for elastic contribution to total activity in plot for system activities
 # Changed 02/2017: fixed small bug while parsing psi angle values for a non-hexagonal system
+# Changed 13/01/2020 Version 3.2 S. Merkel, created global variable "hasElastic" to record whether the output files
+#         include information on elastic deformation (some versions do, do not) has adjusted the various GUI 
+#         to account for it. Typically, HP-EVPSC has no such output vs EVPSC does...
 ###################################################################################################
 
 ##################################################
@@ -194,23 +197,37 @@ proc lineToArray {line} {
 #   Changed 04/12/2008 S. Merkel to adapt to EPSC 4 (columns are different)
 #   Changed 07/11/2014 S. Merkel to adapt to EVPSC
 #   Changed 23/09/2015 S. Merkel, STR_STR has one more component
+#   Changed 13/01/2020 S. Merkel, STR_STR for HP-EVPSC has one less component
+#   Changed 13/01/2020 S. Merkel, created global variable "hasElastic" to record whether the output files
+#         include information on elastic deformation (some versions do, do not)
 ##################################################
 proc countsteps {} {
 	global nsteps
+	global hasElastic
 	set fichier [open "STR_STR.OUT" "r"]
 	# label lines at the top
 	gets $fichier data
 	# count the lines
 	set nsteps  0
+	set howmanycols 0
 	while {[eof $fichier] == 0} {
 		gets $fichier data
 		set dataarray [lineToArray $data]
 		set ncols [llength $dataarray]
-		if {$ncols == 15} {
+		# HP-EVPSC has 14 columns, EVPSC has 15
+		if {($ncols == 15) || ($ncols == 14)} {
 			incr nsteps
+			set howmanycols $ncols
 		}
 	}
 	close $fichier
+	if {$howmanycols == 15} {
+		set hasElastic 1
+		puts "These output files (probably EVPSC) do include information on elastic vs. plastic deformation."
+	} elseif {$howmanycols == 14} {
+		set hasElastic 0
+		puts "These output files (probably HP-EVPSC) do not include information on elastic vs. plastic deformation."
+	}
 	puts "Parsed STR_STR.OUT. Found number of steps: $nsteps."
 }
 
@@ -224,11 +241,13 @@ proc countsteps {} {
 #   Changed 04/12/2008 S. Merkel to adapt to EPSC 4 (columns are different)
 #   Changed 07/11/2014 S. Merkel to adapt to EVPSC
 #   Changed 23/09/2015 S. Merkel, reads elastic vs. plastic deformation component
+#   Changed 13/01/2020 S. Merkel, do read information of elastic vs. plastic deformation if it is not there
 ##################################################
 proc readstresses {} {
 	global nsteps
 	global stress
 	global strain
+	global hasElastic
 	set fichier [open "STR_STR.OUT" "r"]
 	# 6 label lines at the top
 	gets $fichier data
@@ -244,7 +263,11 @@ proc readstresses {} {
 		set stress($i,33) [expr -[lindex $dataarray 10]]
 		set stress($i,P) [expr ($stress($i,11)+$stress($i,22)+$stress($i,33))/3.]
 		set stress($i,t) [expr $stress($i,33)-$stress($i,11)]
-		set strain($i,epratio) [expr [lindex $dataarray 14]]
+		if {$hasElastic == 1} {
+			set strain($i,epratio) [expr [lindex $dataarray 14]]
+		} else {
+			set strain($i,epratio) 0
+		}
 	}
 	close $fichier
 	puts "Parsed STR_STR.OUT for stresses."
@@ -621,6 +644,7 @@ proc plotTvsP {} {
 # History
 #	Created 10/11/2006 S. Merkel
 #	Changed 23/09/2015 S. Merkel to account for elastic contribution
+#	Changed 13/01/2020 S. Merkel, do not plot elastic contribution if is not there
 # Comment:
 ##################################################
 proc plotAvsEps33 {} {
@@ -629,11 +653,14 @@ proc plotAvsEps33 {} {
 	global activities
 	global nsystems
 	global strain
+	global hasElastic
 
 	set output [open "actVsEps33.tmp" "w"]
 	for {set i 0} {$i < $nsteps} {incr i} {
 		set line "$strain($i,33)"
-		set line "$line\t$strain($i,epratio)"
+		if {$hasElastic == 1} {
+			set line "$line\t$strain($i,epratio)"
+		}
 		for {set j 0} {$j < $nsystems} {incr j} {
 			set act [expr $activities($i,$j)*(1.-$strain($i,epratio))]
 			set line "$line\t$act"
@@ -642,13 +669,22 @@ proc plotAvsEps33 {} {
 	}
 	close $output
 	set gnuplot "set ylabel \"Activity\"\nset xlabel \"Eps33\""
-	set gnuplot "$gnuplot\nplot \"actVsEps33.tmp\" using 1:2 title \"Elastic\""
-	for {set j 0} {$j < $nsystems} {incr j} {
-		set col [expr $j+3]
-		set nsys [expr $j+1]
-		set gnuplot "$gnuplot, \"actVsEps33.tmp\" using 1:$col title \"System $nsys\""
+	if {$hasElastic == 1} {
+		set gnuplot "$gnuplot\nplot \"actVsEps33.tmp\" using 1:2 title \"Elastic\""
+		set shiftCol 0
+		set comma ","
+	} else {
+		set gnuplot "$gnuplot\nplot "
+		set shiftCol -1
+		set comma ""
 	}
-	puts $gnuplot
+	for {set j 0} {$j < $nsystems} {incr j} {
+		set col [expr $j+3+$shiftCol]
+		set nsys [expr $j+1]
+		set gnuplot "$gnuplot$comma \"actVsEps33.tmp\" using 1:$col title \"System $nsys\""
+		set comma ","
+	}
+	#puts $gnuplot
 	startGnuplot $gnuplot "Slip systems activities vs Eps33" "actVsEps33"
 }
 
@@ -660,6 +696,7 @@ proc plotAvsEps33 {} {
 # History
 #	Created 10/11/2006 S. Merkel
 #	Changed 23/09/2015 S. Merkel to account for elastic contribution
+#	Changed 13/01/2020 S. Merkel, do not plot elastic contribution if is not there
 # Comment:
 ##################################################
 proc plotAvsStep {} {
@@ -667,11 +704,15 @@ proc plotAvsStep {} {
 	global activities
 	global nsystems
 	global strain
+	global hasElastic
 
 	set output [open "actVsStep.tmp" "w"]
 	for {set i 0} {$i < $nsteps} {incr i} {
 		set line "$i"
-		set line "$line\t$strain($i,epratio)"
+		set line "$strain($i,33)"
+		if {$hasElastic == 1} {
+			set line "$line\t$strain($i,epratio)"
+		}
 		for {set j 0} {$j < $nsystems} {incr j} {
 			set act [expr $activities($i,$j)*(1.-$strain($i,epratio))]
 			set line "$line\t$act"
@@ -680,12 +721,22 @@ proc plotAvsStep {} {
 	}
 	close $output
 	set gnuplot "set ylabel \"Activity\"\nset xlabel \"Step number\""
-	set gnuplot "$gnuplot\nplot \"actVsStep.tmp\" using 1:2 title \"Elastic\""
-	for {set j 0} {$j < $nsystems} {incr j} {
-		set col [expr $j+3]
-		set nsys [expr $j+1]
-		set gnuplot "$gnuplot, \"actVsStep.tmp\" using 1:$col title \"System $nsys\""
+	if {$hasElastic == 1} {
+		set gnuplot "$gnuplot\nplot \"actVsStep.tmp\" using 1:2 title \"Elastic\""
+		set shiftCol 0
+		set comma ","
+	} else {
+		set gnuplot "$gnuplot\nplot "
+		set shiftCol -1
+		set comma ""
 	}
+	for {set j 0} {$j < $nsystems} {incr j} {
+		set col [expr $j+3+$shiftCol]
+		set nsys [expr $j+1]
+		set gnuplot "$gnuplot$comma \"actVsStep.tmp\" using 1:$col title \"System $nsys\""
+		set comma ","
+	}
+	#puts $gnuplot
 	startGnuplot $gnuplot "Slip system activities vs step number" "actVsStep"
 }
 
@@ -697,6 +748,7 @@ proc plotAvsStep {} {
 # History
 #	Created 10/11/2006 S. Merkel
 #	Changed 23/09/2015 S. Merkel to account for elastic contribution
+#	Changed 13/01/2020 S. Merkel, do not plot elastic contribution if is not there
 # Comment:
 ##################################################
 proc plotAvsP {} {
@@ -705,11 +757,14 @@ proc plotAvsP {} {
 	global activities
 	global nsystems
 	global strain
+	global hasElastic
 
 	set output [open "actVsP.tmp" "w"]
 	for {set i 0} {$i < $nsteps} {incr i} {
 		set line "$stress($i,P)"
-		set line "$line\t$strain($i,epratio)"
+		if {$hasElastic == 1} {
+			set line "$line\t$strain($i,epratio)"
+		}
 		for {set j 0} {$j < $nsystems} {incr j} {
 			set act [expr $activities($i,$j)*(1.-$strain($i,epratio))]
 			set line "$line\t$act"
@@ -718,12 +773,22 @@ proc plotAvsP {} {
 	}
 	close $output
 	set gnuplot "set ylabel \"Activity\"\nset xlabel \"P (GPa)\""
-	set gnuplot "$gnuplot\nplot \"actVsP.tmp\" using 1:2 title \"Elastic\""
-	for {set j 0} {$j < $nsystems} {incr j} {
-		set col [expr $j+3]
-		set nsys [expr $j+1]
-		set gnuplot "$gnuplot, \"actVsP.tmp\" using 1:$col title \"System $nsys\""
+	if {$hasElastic == 1} {
+		set gnuplot "$gnuplot\nplot \"actVsP.tmp\" using 1:2 title \"Elastic\""
+		set shiftCol 0
+		set comma ","
+	} else {
+		set gnuplot "$gnuplot\nplot "
+		set shiftCol -1
+		set comma ""
 	}
+	for {set j 0} {$j < $nsystems} {incr j} {
+		set col [expr $j+3+$shiftCol]
+		set nsys [expr $j+1]
+		set gnuplot "$gnuplot$comma \"actVsP.tmp\" using 1:$col title \"System $nsys\""
+		set comma ","
+	}
+	#puts $gnuplot
 	startGnuplot $gnuplot "Slip systems activities vs P" "actVsP"
 }
 
@@ -1718,6 +1783,7 @@ proc showPTEps33vsStep {} {
 #	output:
 # History
 #	Created 10/11/2006 S. Merkel
+#	Changed 13/01/2020 S. Merkel, do not plot elastic contribution if is not there, but show it if it is
 # Comment:
 ##################################################
 proc showPEps33ActvsStep {} {
@@ -1726,21 +1792,33 @@ proc showPEps33ActvsStep {} {
 	global strain
 	global activities
 	global nsystems
+	global hasElastic
+	
+	
+	set shiftCol 0
 	for {set i 0} {$i < $nsteps} {incr i} {
 		set data($i,0) $i
 		set data($i,1) [format "%1.4f" $strain($i,33)]
 		set data($i,2) [format "%3.2f" $stress($i,P)]
+		if {$hasElastic == 1} {
+			set shiftCol 1
+			set data($i,3) [format "%1.3f" $strain($i,epratio)]
+		}
 		for {set j 0} {$j < $nsystems} {incr j} {
-			set col [expr $j+3]
-			set data($i,$col) [format "%1.3f" $activities($i,$j)]
+			set col [expr $j+3+$shiftCol]
+			set act [expr $activities($i,$j)*(1.-$strain($i,epratio))]
+			set data($i,$col) [format "%1.3f" $act]
 		}
 	}
 	set legend [list "step" "eps33" "P (GPa)"]
+	if {$hasElastic == 1} {
+		set legend [concat $legend "Elastic"]
+	}
 	for {set j 0} {$j < $nsystems} {incr j} {
 		set n [expr $j+1]
 		set legend [concat $legend "Sys$n"]
 	}
-	set ncols [expr 3+$nsystems]
+	set ncols [expr 3+$nsystems+$shiftCol]
 	set desc "Step, vertical strain, pressure, slip system activities"
 	showData $desc $ncols $nsteps $legend data
 }
@@ -1852,11 +1930,12 @@ proc clearImages {} {
 # History
 #	2016-10: added QvsStep
 #	Created 10/10/2006 S. Merkel
+#	Changed 13/01/2020 S. Merkel, new window name and title
 # Comment:
 ##################################################
 proc buildUI {} {
 	# Set title for main window
-	wm title . "Analysis or EPSC results"
+	wm title . "Analysis or EVPSC and HP-EVPSC results"
 	# Plot results frame
 	frame .buttonplots -borderwidth 1 -relief solid
 	frame .buttonplots.b
@@ -1926,9 +2005,9 @@ proc buildUI {} {
 	pack .buttonsErase.l
 	pack  .buttonsErase.b
 	# End application
-	label .titre -text " Analysis of results from EVPSC calculations " -bd 2 -relief ridge -padx 5 -pady 5
+	label .titre -text " Analysis of results from EVPSC and HP-EVPSC calculations " -bd 2 -relief ridge -padx 5 -pady 5
 	button .done -text "Exit"  -width 10 -command {exit}
-	label .copyright -text "21 feb 2017, version 3.1 - 2006-2017, S. Merkel, Universite Lille, France"
+	label .copyright -text "13 jan 2019, version 3.2 - 2006-2020, S. Merkel, Universite Lille, France"
 	# Finishing up
     pack .titre -padx 5 -pady 5
     pack .buttonplots -padx 5 -pady 5
