@@ -2025,7 +2025,7 @@ proc buildUI {} {
 	# End application
 	label .titre -text " Analysis of results from EVPSC and HP-EVPSC calculations " -bd 2 -relief ridge -padx 5 -pady 5
 	button .done -text "Exit"  -width 10 -command {exit}
-	label .copyright -text "15 jan 2019, version 3.3 - 2006-2020, S. Merkel, Universite Lille, France"
+	label .copyright -text "15 jan 2020, version 3.3 - 2006-2020, S. Merkel, Universite Lille, France"
 	# Finishing up
     pack .titre -padx 5 -pady 5
     pack .buttonplots -padx 5 -pady 5
