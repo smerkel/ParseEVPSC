@@ -1,5 +1,10 @@
 # ParseEVPSC
 
+
+### Version 3.4. Jan 2020
+
+New interface to show Q factors vs. P, stress, eps33
+
 ### Version 3.3. Jan 2020
 
 Fixed bug while reading multi-step processes
