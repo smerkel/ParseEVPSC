@@ -75,6 +75,7 @@
 #         include information on elastic deformation (some versions do, do not) has adjusted the various GUI 
 #         to account for it. Typically, HP-EVPSC has no such output vs EVPSC does...
 # Changed 15/jan/2020 Version 3.3 S. Merkel to accomodate multi-step processes
+# Changed 15/jan/2020 Version 3.4 S. Merkel. New interface to show Q factors vs. P, stress, eps33
 ###################################################################################################
 
 ##################################################
@@ -1841,6 +1842,59 @@ proc showPEps33ActvsStep {} {
 	showData $desc $ncols $nsteps $legend data
 }
 
+##################################################
+# showQEps33PStep
+#	Object: show the values of eps33, pressure and Q factors as a funtion of step number
+#	intput:
+#	output:
+# History
+#	Created Jan/2020 S. Merkel
+# Comment:
+##################################################
+proc showQEps33PStep {} {
+	global nsteps
+	global stress
+	global strain
+	global nhkl
+	global hkl
+	global nangles
+	global angles
+	global diff
+
+	set shiftCol 0
+	for {set i 0} {$i < $nsteps} {incr i} {
+		set data($i,0) $i
+		set data($i,1) [format "%1.4f" $strain($i,33)]
+		set data($i,2) [format "%3.2f" $stress($i,P)]
+		
+		for {set j 0} {$j < $nhkl} {incr j} {
+			set psids {}
+			for {set k 0} {$k < $nangles} {incr k} {
+				set psi $angles($k)
+				set d $diff($i,$hkl($j),$angles($k))
+				lappend psids [list $psi $d]
+			}
+			#puts $psids
+			foreach {dp Q ddp dQ} [dpQ $psids] break
+			#set eps0 $diff($i,$hkl($j),0)
+			#set eps90 $diff($i,$hkl($j),90)
+			#set Q [expr -($eps90-$eps0)/($eps90+2*$eps0-3)]
+			set col [expr 2*$j+3]
+			set data($i,$col) [format "%1.4f" $Q]
+			set col [expr 2*$j+4]
+			set data($i,$col) [format "%1.4f" $dQ]
+		}
+	}
+	set legend [list "step" "eps33" "P (GPa)"]
+	for {set j 0} {$j < $nhkl} {incr j} {
+		set legend [concat $legend "Q($hkl($j))"]
+		set legend [concat $legend "sigma"]
+	}
+	
+	set ncols [expr 3+2*$nhkl]
+	set desc "Step, vertical strain, pressure, Q factors"
+	showData $desc $ncols $nsteps $legend data
+}
 
 ###################################################################################################
 #
@@ -1949,6 +2003,7 @@ proc clearImages {} {
 #	2016-10: added QvsStep
 #	Created 10/10/2006 S. Merkel
 #	Changed 13/01/2020 S. Merkel, new window name and title
+#	Changed 15/01/2020 S. Merkel, new function: show Q vs P and step
 # Comment:
 ##################################################
 proc buildUI {} {
@@ -1982,6 +2037,7 @@ proc buildUI {} {
 	label .buttonplots.b.l2 -text "Data"
 	button .buttonplots.b.showPTEps33vsStep -text "P, t, Eps33 vs Step"  -width 20 -command {showPTEps33vsStep}
 	button .buttonplots.b.showPEps33ActvsStep -text "P, Eps33, Act vs Step"  -width 20 -command {showPEps33ActvsStep}
+	button .buttonplots.b.showQEps33PStep -text "P, Eps33, Q vs Step"  -width 20 -command {showQEps33PStep}
 
 	grid config .buttonplots.b.l1 -column 1 -row 0 -padx 5 -pady 5
 	grid config .buttonplots.b.l2 -column 3 -row 0 -padx 5 -pady 5
@@ -2010,6 +2066,7 @@ proc buildUI {} {
 
 	grid config .buttonplots.b.showPTEps33vsStep -column 3 -row 1 -padx 5 -pady 5
 	grid config .buttonplots.b.showPEps33ActvsStep -column 3 -row 2 -padx 5 -pady 5
+	grid config .buttonplots.b.showQEps33PStep -column 3 -row 3 -padx 5 -pady 5
 
 	grid config .buttonplots.b
 	# Erase files frame
@@ -2025,7 +2082,7 @@ proc buildUI {} {
 	# End application
 	label .titre -text " Analysis of results from EVPSC and HP-EVPSC calculations " -bd 2 -relief ridge -padx 5 -pady 5
 	button .done -text "Exit"  -width 10 -command {exit}
-	label .copyright -text "15 jan 2020, version 3.3 - 2006-2020, S. Merkel, Universite Lille, France"
+	label .copyright -text "15 jan 2020, version 3.4 - 2006-2020, S. Merkel, Universite Lille, France"
 	# Finishing up
     pack .titre -padx 5 -pady 5
     pack .buttonplots -padx 5 -pady 5
