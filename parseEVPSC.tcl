@@ -74,6 +74,7 @@
 # Changed 13/01/2020 Version 3.2 S. Merkel, created global variable "hasElastic" to record whether the output files
 #         include information on elastic deformation (some versions do, do not) has adjusted the various GUI 
 #         to account for it. Typically, HP-EVPSC has no such output vs EVPSC does...
+# Changed 15/jan/2020 Version 3.3 S. Merkel to accomodate multi-step processes
 ###################################################################################################
 
 ##################################################
@@ -282,12 +283,14 @@ proc readstresses {} {
 #	Created 10/10/2006 S. Merkel
 #   Changed 12/04/2008 S. Merkel to read EPSCV4 format
 #   Changed 07/11/2014 S. Merkel to adapt to EVPSC
+#   Changed 15/jan/2020 S. Merkel to accomodate multi-step processes
 ##################################################
 proc readactivities {phase} {
 	global nsteps
 	global activities
 	global nsystems
 	set fichier [open "ACT_PH${phase}.OUT" "r"]
+	# Analyzing header to figure out the number of slip systems
 	gets $fichier data
 	set dataarray [lineToArray $data]
 	set n [llength $dataarray]
@@ -300,15 +303,29 @@ proc readactivities {phase} {
 			
 		}
 	}
-	# activities at step 0 are null
+	# Activities at step 0 are null
 	for {set j 0} {$j < $nsystems} {incr j} {
 		set activities(0,$j) 0
 	}
+	# Read activities for following steps
+	set skip 0
 	for {set i 1} {$i <= $nsteps-1} {incr i} {
 		gets $fichier data
 		set dataarray [lineToArray $data]
-		for {set j 0} {$j < $nsystems} {incr j} {
-			set activities($i,$j) [lindex $dataarray [expr $j+$mode1]]
+		if { [lindex $dataarray 0] == "STRAIN" } {
+			#puts $data
+			# If it is, we are starting a new process, we need to skip this line and put all activities to 0
+			set k [expr $i-$skip]
+			for {set j 0} {$j < $nsystems} {incr j} {
+				set activities($k,$j) 0.
+			}
+			puts activities($k,0)
+		} else {
+			set k [expr $i-$skip]
+			for {set j 0} {$j < $nsystems} {incr j} {
+				set activities($k,$j) [lindex $dataarray [expr $j+$mode1]]
+			}
+			#puts activities($k,0)
 		}
 	}
 	close $fichier
@@ -397,6 +414,7 @@ proc readdiffraction {diffile phase} {
 		# puts "Reading step $i"
 		gets $fichier data
 		set dataarray [lineToArray $data]
+		# puts $data
 		for {set j 0} {$j < $norientations} {incr j} {
 			set ttt [lindex $dataarray [expr $j+7]]
 			# puts "Trying to work with $ttt. Step is $i, diff is $j"
@@ -2007,7 +2025,7 @@ proc buildUI {} {
 	# End application
 	label .titre -text " Analysis of results from EVPSC and HP-EVPSC calculations " -bd 2 -relief ridge -padx 5 -pady 5
 	button .done -text "Exit"  -width 10 -command {exit}
-	label .copyright -text "13 jan 2019, version 3.2 - 2006-2020, S. Merkel, Universite Lille, France"
+	label .copyright -text "15 jan 2019, version 3.3 - 2006-2020, S. Merkel, Universite Lille, France"
 	# Finishing up
     pack .titre -padx 5 -pady 5
     pack .buttonplots -padx 5 -pady 5
