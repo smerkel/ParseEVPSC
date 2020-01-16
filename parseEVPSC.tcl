@@ -1403,6 +1403,7 @@ proc plotEpsLStressvpP {} {
 #        d-spacings for
 # History
 #	Created 2/10/2007 S. Merkel
+#	Changed 16 jan 2020 S. Merkel, starting value b to 0.01 in gnuplot fit to improve convergence in gnuplot
 # Comment:
 ##################################################
 
@@ -1467,7 +1468,7 @@ proc plotLatticeStrain {widgetindex plotwhat} {
 		set gnuplot "$gnuplot\nf(x) = a * (1. + b * (1.-3.*(cos(x*pi/180.))**2))"
 	}
 	set gnuplot "$gnuplot\na = -0.5"
-	set gnuplot "$gnuplot\nb = 0.0001"
+	set gnuplot "$gnuplot\nb = 0.01"
 	set col 1
 	for {set i 0} {$i < $nhklplot} {incr i} {
 		set thishkl [lindex $plothkl $i]
