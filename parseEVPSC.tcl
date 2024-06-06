@@ -1,8 +1,9 @@
 #!/usr/bin/wish
 
 ###################################################################################################
-#    Copyright 2006-2020, S. Merkel, Universite de Lille, France
+#    Copyright 2006-2024, S. Merkel, Universite de Lille, France
 #    Contact: email sebastien.merkel at univ-lille.fr
+#    Contributions from Lowell Miyagi, Univ. Utah, USA
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -62,6 +63,7 @@
 #	- diff: array with simulated lattice strains
 #		diff($i,$orientations($j,hkl),$orientations($j,psi)) lattice strain for plane and orientation
 #		  defined in the 'orientations' array
+#   - plotsizes: plotXsize = xsize of plots  plotYsize = ysize of plots
 #
 # Changes
 #  06/2008, function to  plot stress (s11, s22, s33) in polycrystal vs eps33
@@ -76,7 +78,15 @@
 #         to account for it. Typically, HP-EVPSC has no such output vs EVPSC does...
 # Changed 15/jan/2020 Version 3.3 S. Merkel to accomodate multi-step processes
 # Changed 15/jan/2020 Version 3.4 S. Merkel. New interface to show Q factors vs. P, stress, eps33
+# Changed 26/jan/2024 L.Miyagi updated gnuplot calls to be compatible with windows
+# Changed 13/may/2024 L. Miyagi to fix issue with gnuplot when plotting lattice strains in windows
+# Changed 06/jun/2024 Option to set plot sizes
+#
 ###################################################################################################
+
+# Default values for plot sizes
+set plotXsize 800
+set plotYsize 600
 
 ##################################################
 # linear'regression
@@ -522,24 +532,48 @@ proc clearGnuplot {indexPlot} {
 #	output:
 # History
 #	Created 10/11/2006 S. Merkel
-# Comment:
+#   Modified Jan 26 2024 L.Miyagi >& /dev/null to > NUL to run in windows
+#   Modified May 13 2024 L. Miyagi to fix issue with gnuplot when plotting lattice strains in windows
+# Comment: 
 ##################################################
 proc startGnuplot {input windowtitle filename} {
 	global indexPlot
 	global inputGnuplot
-	# Output to /dev/null is important to avoid garbage (when curve fitting for instance)
-	# Have a look at http://perso.numericable.fr/~mipicard/sorties.html to adapt to windows
-	set gp [open "|gnuplot >& /dev/null" w]
-	puts $gp "set term tk"
-	puts $gp "set output 'resultat.tk'"
-	puts $gp $input
-	close $gp
+	global plotXsize
+	global plotYsize
+	
+    # Search for Gnuplot executable in system's PATH added 13 May 2024 L. Miyagi
+    set gpExecutable [lindex [auto_execok gnuplot] 0]
+    
+    # Check if Gnuplot executable was found added 13 May 2024 L. Miyagi
+    if {[string length $gpExecutable] == 0} {
+        puts "Error: Gnuplot executable not found in PATH."
+        return
+    }
+    
+    # Open pipe to Gnuplot added 13 May 2024 L. Miyagi
+    set gp [open "|\"$gpExecutable\" > NUL:" w]
+    
+    # Send commands to Gnuplot added 13 May 2024 L. Miyagi
+    puts $gp "set term tk"
+    puts $gp "set output 'resultat.tk'"
+    puts $gp $input
+    flush $gp  ;# Ensure all commands are sent added 13 May 2024 L. Miyagi
+    
+    # Wait for Gnuplot to finish executing added 13 May 2024 L. Miyagi
+    catch {close $gp} errorMsg
+    
+    # Check for errors
+    if {[string length $errorMsg] > 0} {
+        puts "Error closing Gnuplot pipe: $errorMsg"
+    }
+	
 	incr indexPlot
 	set inputGnuplot($indexPlot) $input
 	toplevel .c${indexPlot}
     wm title .c${indexPlot} $windowtitle
-    #wm minsize .c${indexPlot} 500 400
-	canvas .c${indexPlot}.plot -width 500 -height 400 -background "#FFFFFF"
+    #wm minsize .c${indexPlot} 1000 800
+	canvas .c${indexPlot}.plot -width $plotXsize -height $plotYsize -background "#FFFFFF"
 	frame .c${indexPlot}.buttons
 	button .c${indexPlot}.buttons.exportPS -text "Postscript (NB)"  -width 15 \
 			-command "gnuplotPostscript \"$indexPlot\" \"$filename\""
@@ -557,7 +591,9 @@ proc startGnuplot {input windowtitle filename} {
     pack .c${indexPlot}.buttons
 	source resultat.tk
 	gnuplot .c${indexPlot}.plot
+	
 }
+
 
 ###################################################################################################
 #
@@ -1897,6 +1933,97 @@ proc showQEps33PStep {} {
 	showData $desc $ncols $nsteps $legend data
 }
 
+
+###################################################################################################
+#
+# Gui update (change plot size)
+#
+###################################################################################################
+
+# Function that calls a dialog to change the plot size in gnuplot
+#
+#
+# Created June 06/2024, S. Merkel
+proc guiXYplotsize {} {
+	global plotXsize plotYsize
+	global value1 value2
+	set title "Update GUI properties"
+	# Using dictionnaries as they can be passed to a procedure (arrays can not)
+	set texts [dict create 1 "X plot size (pixels)" 2 "Y plot size (pixels)"]
+	set value1 $plotXsize
+	set value2 $plotYsize
+	set ok [dialog2values .guiXYplotsizeDlg title texts]
+	if {$ok} {
+		set plotXsize $value1
+		set plotYsize $value2
+		# puts "Plot size update to $plotXsize and $plotYsize"
+	}
+}
+
+# Dialog to update two values
+# Created based on tk_getString found at https://wiki.tcl-lang.org/page/Another+little+value+dialog
+# Could probably be improved to have n values to update
+# Parameters
+#   - w: widget name
+#   - titles: window title
+#   - texts: dictionnary with labels for each value
+# Pass the values to update as global variables. The upvar trick is a piece of crap and does not work
+#
+# Created June 06/2024, S. Merkel
+proc dialog2values {w title texts} {
+	variable ::tk::Priv
+    upvar $texts labels
+	catch {destroy $w}
+	set focus [focus]
+	set grab [grab current .]
+	global value1 value2
+	# Values for input text fields need to be global to be able to send a default value
+
+	toplevel $w -bd 1 -relief raised -class TkSDialog
+	wm title $w $title
+	wm iconname  $w $title
+	wm protocol  $w WM_DELETE_WINDOW {set ::tk::Priv(button) 0}
+	wm transient $w [winfo toplevel [winfo parent $w]]
+
+	entry  $w.entry1 -width 20 -textvariable value1 -justify right -validate key -vcmd {string is int %P}
+	entry  $w.entry2 -width 20 -textvariable value2 -justify right -validate key -vcmd {string is int %P}
+	button $w.ok -bd 1 -width 5 -text Ok -default active -command {set ::tk::Priv(button) 1}
+	button $w.cancel -bd 1 -text Cancel -command {set ::tk::Priv(button) 0}
+	label  $w.label1 -text [dict get $labels 1]
+	label  $w.label2 -text [dict get $labels 2]
+
+	grid $w.label1 $w.entry1  -sticky ew -padx 3 -pady 3
+	grid $w.label2 $w.entry2  -sticky ew -padx 3 -pady 3
+	grid $w.ok $w.cancel -padx 3 -pady 3
+	grid rowconfigure $w 2 -weight 1
+	grid columnconfigure $w {0 1} -uniform 1 -weight 1
+
+	bind $w <Return>  {set ::tk::Priv(button) 1}
+	bind $w <Destroy> {set ::tk::Priv(button) 0}
+	bind $w <Escape>  {set ::tk::Priv(button) 0}
+
+	wm withdraw $w
+	update idletasks
+	focus $w.entry1
+	set x [expr {[winfo screenwidth  $w]/2 - [winfo reqwidth  $w]/2 - [winfo vrootx $w]}]
+	set y [expr {[winfo screenheight $w]/2 - [winfo reqheight $w]/2 - [winfo vrooty $w]}]
+	wm geom $w +$x+$y
+	wm deiconify $w
+	grab $w
+
+	tkwait variable ::tk::Priv(button)
+	# set value1 [$w.entry1 get] # Not necessary as those are global variables
+	# set value2 [$w.entry2 get] # Not necessary as those are global variables
+	bind $w <Destroy> {}
+	grab release $w
+	destroy $w
+	focus -force $focus
+	if {$grab != ""} {grab $grab}
+	update idletasks
+	return $::tk::Priv(button)
+}
+
+
 ###################################################################################################
 #
 # Main procedudes: load data, build UI...
@@ -2009,7 +2136,7 @@ proc clearImages {} {
 ##################################################
 proc buildUI {} {
 	# Set title for main window
-	wm title . "Analysis or EVPSC and HP-EVPSC results"
+	wm title . "Analysis of EVPSC and HP-EVPSC results"
 	# Plot results frame
 	frame .buttonplots -borderwidth 1 -relief solid
 	frame .buttonplots.b
@@ -2040,8 +2167,12 @@ proc buildUI {} {
 	button .buttonplots.b.showPEps33ActvsStep -text "P, Eps33, Act vs Step"  -width 20 -command {showPEps33ActvsStep}
 	button .buttonplots.b.showQEps33PStep -text "P, Eps33, Q vs Step"  -width 20 -command {showQEps33PStep}
 
+	label .buttonplots.b.l3 -text "GUI"
+	button .buttonplots.b.guiXYplotsize -text "Change plot size"  -width 20 -command {guiXYplotsize}
+
 	grid config .buttonplots.b.l1 -column 1 -row 0 -padx 5 -pady 5
 	grid config .buttonplots.b.l2 -column 3 -row 0 -padx 5 -pady 5
+	grid config .buttonplots.b.l3 -column 3 -row 7 -padx 5 -pady 5
 
 	grid config .buttonplots.b.plotPvsEps -column 0 -row 1 -padx 5 -pady 5
 	grid config .buttonplots.b.plotTvsEps -column 0 -row 2 -padx 5 -pady 5
@@ -2069,6 +2200,8 @@ proc buildUI {} {
 	grid config .buttonplots.b.showPEps33ActvsStep -column 3 -row 2 -padx 5 -pady 5
 	grid config .buttonplots.b.showQEps33PStep -column 3 -row 3 -padx 5 -pady 5
 
+	grid config .buttonplots.b.guiXYplotsize -column 3 -row 8 -padx 5 -pady 5
+
 	grid config .buttonplots.b
 	# Erase files frame
 	frame .buttonsErase -borderwidth 1 -relief solid
@@ -2083,7 +2216,7 @@ proc buildUI {} {
 	# End application
 	label .titre -text " Analysis of results from EVPSC and HP-EVPSC calculations " -bd 2 -relief ridge -padx 5 -pady 5
 	button .done -text "Exit"  -width 10 -command {exit}
-	label .copyright -text "15 jan 2020, version 3.4 - 2006-2020, S. Merkel, Universite Lille, France"
+	label .copyright -text "6 june 2024, version 3.5 - 2006-2024, S. Merkel, Universite Lille, France"
 	# Finishing up
     pack .titre -padx 5 -pady 5
     pack .buttonplots -padx 5 -pady 5
