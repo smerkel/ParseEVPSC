@@ -1,6 +1,11 @@
 # ParseEVPSC
 
 
+### Version 3.5. Jan 2024
+
+Windows 11 compatible version (still works fine on linux) thanks to Lowell Miyagi @ Univ. of Utah
+Option to set the plot size from within the gui
+
 ### Version 3.4. Jan 2020
 
 New interface to show Q factors vs. P, stress, eps33
